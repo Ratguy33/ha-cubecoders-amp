@@ -50,5 +50,25 @@
         }
       }
     }
+  },
+  "entity": {
+    "sensor": {
+      "status": {
+        "name": "Status",
+        "state": {
+          "offline": "Offline",
+          "idle": "Idle",
+          "running": "Running",
+          "starting": "Starting",
+          "stopping": "Stopping",
+          "restarting": "Restarting",
+          "updating": "Updating",
+          "installing": "Installing",
+          "sleeping": "Sleeping",
+          "failed": "Failed",
+          "unknown": "Unknown"
+        }
+      }
+    }
   }
 }
