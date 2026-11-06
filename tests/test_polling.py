@@ -33,12 +33,21 @@ class FakeAMP:
 
     def __init__(self) -> None:
         self.running = True
-        self.app_state = "ready"
+        self.app_state = "ready"  # what the instance itself reports
+        # What the ADS instance list reports; None = same as the instance.
+        # Real ADS lists can lag a state change by tens of seconds.
+        self.ads_app_state: str | None = None
         self.polls = 0
         self.light_polls = 0
         self.actions: list[str] = []
+        self.last_live_ids: frozenset[str] = frozenset()
 
-    def data(self, *, full: bool = True) -> AmpCoordinatorData:
+    def data(
+        self, *, full: bool = True, live_ids: frozenset[str] = frozenset()
+    ) -> AmpCoordinatorData:
+        # Full polls and followed instances read the instance's own state.
+        live = full or "pz4-guid" in live_ids or self.ads_app_state is None
+        state = self.app_state if live else self.ads_app_state
         inst = AmpExtendedInstance(
             instance_name="PZ 04 mods",
             instance_index=0,
@@ -49,7 +58,7 @@ class FakeAMP:
             max_active_users=8,
             cpu_usage_percentage=5,
             memory_usage_mb=900,
-            app_state=self.app_state if self.running else "stopped",
+            app_state=state if self.running else "stopped",
             address=None,
             running=self.running,
             amp_version="2.6",
@@ -77,10 +86,13 @@ def amp():
         async def async_get_instances(self):
             return [AmpBaseInstance("PZ 04 mods", 0, "PZ04mods01", "pz4-guid")]
 
-        async def async_get_data(self, *, full: bool = True):
+        async def async_get_data(
+            self, *, full: bool = True, live_ids: frozenset[str] = frozenset()
+        ):
             fake.polls += 1
             fake.light_polls += not full
-            return fake.data(full=full)
+            fake.last_live_ids = live_ids
+            return fake.data(full=full, live_ids=live_ids)
 
         async def _record(self, action, name):
             fake.actions.append(f"{action} {name}")
@@ -301,3 +313,27 @@ async def test_unload_during_burst_restores_interval(hass: HomeAssistant, amp) -
     assert coordinator.update_interval == FAST
     assert await hass.config_entries.async_unload(entry.entry_id)
     assert coordinator.update_interval == timedelta(seconds=30)
+
+
+async def test_follows_instance_even_when_ads_list_lags(
+    hass: HomeAssistant, amp, freezer: FrozenDateTimeFactory
+) -> None:
+    """The ADS list still says 'stopped'; the instance's own state is shown."""
+    amp.app_state = "stopped"
+    entry = await _setup(hass)
+    coordinator = entry.runtime_data.coordinator
+    amp.ads_app_state = "stopped"  # ADS list frozen for the whole start
+
+    await _press(hass, "switch.pz_04_mods_application")
+    assert amp.last_live_ids == frozenset({"pz4-guid"})
+
+    amp.app_state = "starting"
+    await _tick(hass, freezer, 2)
+    assert _state(hass) == "starting"
+
+    amp.app_state = "ready"
+    await _tick(hass, freezer, 2)
+    assert _state(hass) == "ready"
+
+    await _tick(hass, freezer, SETTLE_SECONDS + 1)
+    assert coordinator.update_interval == timedelta(seconds=60)

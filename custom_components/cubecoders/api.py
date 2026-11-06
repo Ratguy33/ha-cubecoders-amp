@@ -18,6 +18,7 @@ from ampapi.dataclass import (
     VersionInfo,
     timestamp_converter,
 )
+from ampapi.enums import AMPInstanceState
 from ampapi.instance import AMPMinecraftInstance
 
 _LOGGER = logging.getLogger(__name__)
@@ -117,6 +118,21 @@ def join_version_build(version: str | None, build: str | None) -> str | None:
     if not version:
         return None
     return f"{version} ({build})" if build else version
+
+
+def app_state_name(value: object) -> str | None:
+    """Return the AMPInstanceState name for an enum, its int value or its name."""
+    if isinstance(value, AMPInstanceState):
+        return value.name
+    try:
+        return AMPInstanceState(int(value)).name  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, str):
+        key = value.strip().lower().replace(" ", "_")
+        if key in AMPInstanceState.__members__:
+            return key
+    return None
 
 
 def normalize_keys(data: dict) -> dict:
@@ -381,7 +397,9 @@ class AmpApiClient:
             raise AmpApiClientError(msg)
         return result
 
-    async def async_get_data(self, *, full: bool = True) -> AmpCoordinatorData:
+    async def async_get_data(
+        self, *, full: bool = True, live_ids: frozenset[str] = frozenset()
+    ) -> AmpCoordinatorData:
         """Get data from the API for every instance, plus panel-level info.
 
         With full=False only the single ADS get_instances() call is made
@@ -390,6 +408,11 @@ class AmpApiClient:
         version/update lookups are skipped. The coordinator uses this for
         its fast polling burst after an action and carries the skipped
         fields forward from the previous full refresh.
+
+        live_ids names instances whose application state should be read
+        from the instance itself (Core/GetStatus) instead of the ADS
+        instance list, which can lag a state change by tens of seconds. The
+        coordinator passes the instances it is following after an action.
 
         A stopped or unreachable instance must never fail the whole refresh:
         stopped instances are populated from the get_instances() payload only,
@@ -412,7 +435,10 @@ class AmpApiClient:
 
         instances = {
             instance.instance_id: await self._async_get_instance_data(
-                key, instance, live=full
+                key,
+                instance,
+                live=full,
+                live_state=instance.instance_id in live_ids,
             )
             for key, instance in enumerate(all_instances)
         }
@@ -479,8 +505,36 @@ class AmpApiClient:
             release_notes_url=result.release_notes_url or None,
         )
 
+    async def _async_get_live_app_state(self, instance: Instance) -> str | None:
+        """Read an instance's application state from the instance itself.
+
+        One Core/GetStatus call. The raw response is used because ampapi
+        1.1.2 parses GetStatus into a dataclass without the State field.
+        Returns None if the instance can't answer (e.g. still booting).
+        """
+        try:
+            raw = await AMPInstance(instance).get_status(format_data=False)
+        except Exception:  # fall back to the ADS-reported state
+            _LOGGER.debug(
+                "Could not read live status for instance %s",
+                instance.friendly_name,
+                exc_info=True,
+            )
+            return None
+        if isinstance(raw, dict):
+            fields = normalize_keys(raw)
+            if "state" not in fields and isinstance(fields.get("result"), dict):
+                fields = normalize_keys(fields["result"])
+            return app_state_name(fields.get("state"))
+        return None
+
     async def _async_get_instance_data(
-        self, key: int, instance: Instance, *, live: bool = True
+        self,
+        key: int,
+        instance: Instance,
+        *,
+        live: bool = True,
+        live_state: bool = False,
     ) -> AmpExtendedInstance:
         """Build the data for a single instance.
 
@@ -528,7 +582,13 @@ class AmpApiClient:
             module=instance.module,
         )
 
-        if not instance.running or not live:
+        if not instance.running:
+            return data
+        if not live:
+            if live_state:
+                state = await self._async_get_live_app_state(instance)
+                if state is not None:
+                    data.app_state = state
             return data
 
         live_instance = AMPInstance(instance)
@@ -563,6 +623,10 @@ class AmpApiClient:
         else:
             if isinstance(updates, Updates) and updates.status is not None:
                 data.uptime = updates.status.uptime or None
+                # The instance's own state is fresher than the ADS list's.
+                state = app_state_name(updates.status.state)
+                if state is not None:
+                    data.app_state = state
 
         try:
             # Raw response (format_data=False) is used on purpose: ampapi

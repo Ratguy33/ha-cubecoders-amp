@@ -149,7 +149,9 @@ class AmpDataUpdateCoordinator(DataUpdateCoordinator[AmpCoordinatorData]):
         try:
             client = self.config_entry.runtime_data.client
             if self.fast_polling and self.data is not None:
-                data = await client.async_get_data(full=False)
+                data = await client.async_get_data(
+                    full=False, live_ids=frozenset(self._burst_targets or ())
+                )
                 self._carry_forward_live_fields(previous=self.data, new=data)
             else:
                 data = await client.async_get_data()
