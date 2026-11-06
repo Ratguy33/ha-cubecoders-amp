@@ -1,7 +1,6 @@
 # Changelog
 
-## Unreleased
-
+## 1.7.2 (2026-11-06)
 ### Fixed
 
 - **Instance start/stop lagged on the dashboard.** Whether an instance is
