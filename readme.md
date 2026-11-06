@@ -2,7 +2,7 @@
 
 Integrates with [AMP](https://cubecoders.com/AMP) to create a device for each game server instance, with sensors, start/stop controls, player events, console commands, and update info.
 
-Maintained by [@Ratguy33](https://github.com/Ratguy33). Originally created by [@samywamy10](https://github.com/Samywamy10/ha-cubecoders-amp) and maintained by Maintained by [@sirjmann92](https://github.com/sirjmann92); this fork continues development since the original repository became inactive.
+Maintained by [@Ratguy33](https://github.com/Ratguy33). Originally created by [@samywamy10](https://github.com/Samywamy10/ha-cubecoders-amp) and maintained by [@sirjmann92](https://github.com/sirjmann92); this fork continues development since the original repository became inactive.
 
 ## Your game servers, everywhere Home Assistant is
 
