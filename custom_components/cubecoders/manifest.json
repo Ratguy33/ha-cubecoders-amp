@@ -1,15 +1,15 @@
 {
   "domain": "cubecoders",
   "name": "AMP",
-  "codeowners": ["@sirjmann92"],
+  "codeowners": ["@ratguy33"],
   "config_flow": true,
   "dependencies": ["http"],
   "documentation": "https://github.com/sirjmann92/ha-cubecoders-amp?tab=readme-ov-file",
   "homekit": {},
   "iot_class": "local_polling",
-  "issue_tracker":  "https://github.com/sirjmann92/ha-cubecoders-amp/issues",
+  "issue_tracker":  "https://github.com/ratguy33/ha-cubecoders-amp/issues",
   "requirements": ["cc-ampapi==1.1.2", "dataclass-wizard==0.34.0"],
   "ssdp": [],
-  "version": "1.5.2",
+  "version": "1.6.0",
   "zeroconf": []
 }
