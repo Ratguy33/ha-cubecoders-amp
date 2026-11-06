@@ -14,7 +14,13 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.loader import async_get_loaded_integration
 
 from .api import AmpApiClient, AmpCoordinatorData
-from .const import CONF_TOTP_SECRET, DOMAIN, STATIC_URL_BASE
+from .const import (
+    CONF_SCAN_INTERVAL,
+    CONF_TOTP_SECRET,
+    DEFAULT_SCAN_INTERVAL,
+    DOMAIN,
+    STATIC_URL_BASE,
+)
 from .coordinator import AmpDataUpdateCoordinator
 from .data import AmpData
 from .entry import AMPConfigEntry
@@ -50,7 +56,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: AMPConfigEntry) -> bool:
         logger=LOGGER,
         name="cubecoders",
         config_entry=entry,
-        update_interval=timedelta(minutes=1),
+        update_interval=timedelta(
+            seconds=entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+        ),
     )
 
     # Must be set before the first API call; empty means no 2FA.
@@ -71,8 +79,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: AMPConfigEntry) -> bool:
     _async_remove_stale_devices(hass, entry, coordinator.data)
     await hass.config_entries.async_forward_entry_setups(entry, _PLATFORMS)
     async_setup_services(hass)
+    entry.async_on_unload(coordinator.async_cancel_fast_poll)
+    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
 
     return True
+
+
+async def _async_options_updated(hass: HomeAssistant, entry: AMPConfigEntry) -> None:
+    """Apply a changed polling interval by reloading the entry."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: AMPConfigEntry) -> bool:

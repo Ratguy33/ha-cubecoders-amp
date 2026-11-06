@@ -85,7 +85,7 @@ class AmpInstanceSwitch(AmpInstanceEntity, SwitchEntity):
         if data is not None:
             data.running = running
             self.coordinator.async_set_updated_data(self.coordinator.data)
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.async_fast_poll(self.amp_instance_name)
 
 
 class AmpApplicationSwitch(AmpInstanceEntity, SwitchEntity):
@@ -141,4 +141,4 @@ class AmpApplicationSwitch(AmpInstanceEntity, SwitchEntity):
         if data is not None:
             data.app_state = "starting" if running else "stopping"
             self.coordinator.async_set_updated_data(self.coordinator.data)
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.async_fast_poll(self.amp_instance_name)
