@@ -37,6 +37,8 @@ class FakeAMP:
         # What the ADS instance list reports; None = same as the instance.
         # Real ADS lists can lag a state change by tens of seconds.
         self.ads_app_state: str | None = None
+        # Whether the ADS list says the instance is up; None = same as real.
+        self.ads_running: bool | None = None
         self.polls = 0
         self.light_polls = 0
         self.actions: list[str] = []
@@ -45,26 +47,32 @@ class FakeAMP:
     def data(
         self, *, full: bool = True, live_ids: frozenset[str] = frozenset()
     ) -> AmpCoordinatorData:
-        # Full polls and followed instances read the instance's own state.
-        live = full or "pz4-guid" in live_ids or self.ads_app_state is None
+        followed = "pz4-guid" in live_ids
+        ads_running = self.running if self.ads_running is None else self.ads_running
+        # Followed instances are asked directly; others come from the ADS list.
+        running = self.running if followed else ads_running
+        # Full polls and followed instances read the instance's own app state.
+        live = full or followed or self.ads_app_state is None
         state = self.app_state if live else self.ads_app_state
         inst = AmpExtendedInstance(
             instance_name="PZ 04 mods",
             instance_index=0,
             amp_instance_name="PZ04mods01",
             instance_id="pz4-guid",
-            active_users=1 if self.running else 0,
+            active_users=1 if running else 0,
             players=None,
             max_active_users=8,
             cpu_usage_percentage=5,
             memory_usage_mb=900,
-            app_state=state if self.running else "stopped",
+            app_state=state if running else "stopped",
             address=None,
-            running=self.running,
+            running=running,
             amp_version="2.6",
             module="GenericModule",
         )
-        if full and self.running:  # only full polls fetch the live player list
+        if followed:
+            inst.ads_running = ads_running
+        if full and running:  # only full polls fetch the live player list
             inst.player_list = ["Steve"]
             inst.players = "Steve"
         return AmpCoordinatorData(
@@ -108,6 +116,9 @@ def amp():
 
         async def async_start_instance(self, name):
             await self._record("start instance", name)
+
+        async def async_stop_instance(self, name):
+            await self._record("stop instance", name)
 
         async def async_upgrade_instance(self, name):
             await self._record("update", name)
@@ -337,3 +348,48 @@ async def test_follows_instance_even_when_ads_list_lags(
 
     await _tick(hass, freezer, SETTLE_SECONDS + 1)
     assert coordinator.update_interval == timedelta(seconds=60)
+
+
+async def test_instance_start_shows_before_ads_list_catches_up(
+    hass: HomeAssistant, amp, freezer: FrozenDateTimeFactory
+) -> None:
+    """Instance switch turns on as soon as the instance answers, not when ADS does."""
+    amp.running, amp.app_state = False, "stopped"
+    entry = await _setup(hass)
+    coordinator = entry.runtime_data.coordinator
+    amp.ads_running = False  # ADS list keeps saying "off" for a while
+
+    await _press(hass, "switch.pz_04_mods_instance")
+    amp.running = True
+    await _tick(hass, freezer, 2)
+    assert hass.states.get("switch.pz_04_mods_instance").state == "on"
+
+    # Instance settled, but ADS still behind: keep following (no flip-back).
+    await _tick(hass, freezer, SETTLE_SECONDS + 30)
+    assert coordinator.update_interval == FAST
+    assert hass.states.get("switch.pz_04_mods_instance").state == "on"
+
+    amp.ads_running = None  # ADS list catches up
+    await _tick(hass, freezer, SETTLE_SECONDS + 2)
+    assert coordinator.update_interval == timedelta(seconds=60)
+
+    # The next regular poll (ADS-based) agrees; nothing flips back.
+    await _tick(hass, freezer, 61)
+    assert hass.states.get("switch.pz_04_mods_instance").state == "on"
+
+
+async def test_instance_stop_shows_before_ads_list_catches_up(
+    hass: HomeAssistant, amp, freezer: FrozenDateTimeFactory
+) -> None:
+    """Instance switch turns off as soon as AMP says the instance is unavailable."""
+    entry = await _setup(hass)
+    amp.ads_running = True  # ADS list keeps saying "on"
+
+    await hass.services.async_call(
+        "switch", "turn_off", {"entity_id": "switch.pz_04_mods_instance"}, blocking=True
+    )
+    amp.running = False
+    await _tick(hass, freezer, 2)
+    assert hass.states.get("switch.pz_04_mods_instance").state == "off"
+    assert _state(hass) == "stopped"
+    assert entry.runtime_data.coordinator.update_interval == FAST

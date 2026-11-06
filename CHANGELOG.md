@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Instance start/stop lagged on the dashboard.** Whether an instance is
+  running also comes from the ADS instance list, which can lag by tens of
+  seconds. While following an action, the integration now asks the
+  instance itself: if it answers it is up (and reports its application
+  state); if AMP replies "Instance Unavailable" it is down. Fast polling
+  also continues until the ADS list agrees, so the next regular poll can't
+  flip the switch back. Other errors are treated as inconclusive and keep
+  the ADS values.
+- **Polls could stall for up to 30 seconds with 2FA enabled.** Calling an
+  instance that is down (for example one the ADS list still shows as
+  running) made the 2FA login treat "Instance Unavailable" as a failed
+  login, retry, and wait for the next 2FA code. It is now recognised and
+  raised immediately.
+
 ## 1.7.1 (2026-11-06)
 
 ### Fixed

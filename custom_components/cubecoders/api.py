@@ -9,6 +9,7 @@ from datetime import datetime  # noqa: TC003 - used in dataclass field annotatio
 
 import aiohttp
 from ampapi import ADSModule, AMPInstance, Bridge, Core
+from ampapi.base import Base as AmpBase
 from ampapi.dataclass import (
     ActionResult,
     APIParams,
@@ -79,6 +80,9 @@ class AmpExtendedInstance(AmpBaseInstance):
     # then carries the previous value forward so the sensor stays useful.
     last_backup_at: datetime | None = None
     last_backup_name: str | None = None
+    # When the instance itself was asked whether it is up (while following
+    # an action), what the ADS instance list said; None if it wasn't asked.
+    ads_running: bool | None = None
 
 
 @dataclass
@@ -118,6 +122,19 @@ def join_version_build(version: str | None, build: str | None) -> str | None:
     if not version:
         return None
     return f"{version} ({build})" if build else version
+
+
+def is_instance_offline(exception: BaseException) -> bool:
+    """True for ampapi's "Instance Unavailable" error (the instance is down).
+
+    ampapi raises a plain ConnectionError both for this and for other
+    failures (e.g. a non-200 reply), so the message is what tells them apart.
+    """
+    return (
+        isinstance(exception, ConnectionError)
+        and bool(exception.args)
+        and exception.args[0] == AmpBase._instance_offline
+    )
 
 
 def app_state_name(value: object) -> str | None:
@@ -505,28 +522,36 @@ class AmpApiClient:
             release_notes_url=result.release_notes_url or None,
         )
 
-    async def _async_get_live_app_state(self, instance: Instance) -> str | None:
-        """Read an instance's application state from the instance itself.
+    async def _async_probe_instance(
+        self, instance: Instance
+    ) -> tuple[bool | None, str | None]:
+        """Ask the instance itself whether it is up, and its application state.
 
-        One Core/GetStatus call. The raw response is used because ampapi
-        1.1.2 parses GetStatus into a dataclass without the State field.
-        Returns None if the instance can't answer (e.g. still booting).
+        One Core/GetStatus call. Returns (True, state) if the instance
+        answers, (False, None) if AMP reports it unavailable (it is down or
+        not up yet), and (None, None) if the answer is inconclusive (some
+        other error), in which case the ADS-reported values should be kept.
+        The raw response is used because ampapi 1.1.2 parses GetStatus into
+        a dataclass without the State field.
         """
         try:
             raw = await AMPInstance(instance).get_status(format_data=False)
-        except Exception:  # fall back to the ADS-reported state
+        except Exception as exception:  # inconclusive unless "unavailable"
+            if is_instance_offline(exception):
+                return False, None
             _LOGGER.debug(
                 "Could not read live status for instance %s",
                 instance.friendly_name,
                 exc_info=True,
             )
-            return None
+            return None, None
+        state = None
         if isinstance(raw, dict):
             fields = normalize_keys(raw)
             if "state" not in fields and isinstance(fields.get("result"), dict):
                 fields = normalize_keys(fields["result"])
-            return app_state_name(fields.get("state"))
-        return None
+            state = app_state_name(fields.get("state"))
+        return True, state
 
     async def _async_get_instance_data(
         self,
@@ -582,13 +607,18 @@ class AmpApiClient:
             module=instance.module,
         )
 
-        if not instance.running:
-            return data
-        if not live:
-            if live_state:
-                state = await self._async_get_live_app_state(instance)
-                if state is not None:
+        if live_state:
+            # Followed after an action: the ADS list can lag both whether
+            # the instance is up and its application state, so ask it.
+            running, state = await self._async_probe_instance(instance)
+            if running is not None:
+                data.ads_running = instance.running
+                data.running = running
+                if not running:
+                    data.app_state = "stopped"
+                elif state is not None:
                     data.app_state = state
+        if not data.running or not live:
             return data
 
         live_instance = AMPInstance(instance)

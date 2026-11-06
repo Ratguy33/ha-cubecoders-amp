@@ -116,7 +116,10 @@ class AmpDataUpdateCoordinator(DataUpdateCoordinator[AmpCoordinatorData]):
             in_progress = inst.app_state in IN_PROGRESS_APP_STATES
             if in_progress or inst.running != target["running"]:
                 target["changed"] = True
-            settled = settled and not in_progress
+            # Keep following until the ADS list has caught up with what the
+            # instance reports, so the next regular poll can't flip it back.
+            ads_behind = inst.ads_running is not None and inst.ads_running != inst.running
+            settled = settled and not in_progress and not ads_behind
         if not settled:
             self._settled_since = None
             return False
