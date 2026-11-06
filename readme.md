@@ -85,6 +85,8 @@ Install via [HACS by adding a custom repository](https://www.hacs.xyz/docs/faq/c
 
 The integration supports reconfiguration from the integration page (no need to delete and re-add to change host or credentials).
 
+To change how often AMP is polled (default 60 seconds), use **Configure** on the integration page. After you start, stop, restart or update something from Home Assistant, it also polls every second (one lightweight API call per poll) until that server has settled, so you see starting/stopping/updating as it happens so the new state shows up quickly. CPU and memory figures still only change as often as AMP's own *Metrics Reporting Interval*.
+
 ### Notes
 
 - **Two-factor login:** with a 2FA secret set, the integration generates the current code itself. Home Assistant's clock must be accurate (codes are time-based), and the secret is stored in Home Assistant's config entry like the password, so 2FA effectively becomes a second password for this account — a dedicated AMP user with only the permissions you need is a good idea.

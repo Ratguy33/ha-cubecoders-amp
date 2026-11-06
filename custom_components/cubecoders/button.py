@@ -108,4 +108,8 @@ class AmpInstanceButton(AmpInstanceEntity, ButtonEntity):
             await getattr(self._client, self._client_method)(self.amp_instance_name)
         except AmpApiClientError as exception:
             raise HomeAssistantError(str(exception)) from exception
-        await self.coordinator.async_request_refresh()
+        if self._client_method == "async_take_backup":
+            # A backup doesn't change the instance's state; nothing to follow.
+            await self.coordinator.async_request_refresh()
+        else:
+            await self.coordinator.async_fast_poll(self.amp_instance_name)

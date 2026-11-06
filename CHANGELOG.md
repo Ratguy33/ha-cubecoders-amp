@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Configurable polling interval.** The integration's **Configure** button
+  sets how often AMP is polled (10-600 seconds, default 60 as before).
+  Changing it reloads the integration automatically.
+- **Status follows actions live.** After a start, stop, restart or update
+  (switches and buttons), the integration polls every second until that
+  instance has changed and then held a settled state (ready, stopped,
+  failed, ...) for 10 seconds, so the dashboard shows starting, stopping,
+  restarting and updating as they happen, including an instance that boots
+  and then auto-starts its game. If AMP shows no change within 30 seconds
+  it stops once settled, and it never runs longer than 15 minutes. These
+  fast polls make a single AMP API call each (the instance list, which
+  carries state, player count and metrics); player names, uptime, backups
+  and panel version are carried forward from the last full poll, so no
+  false player-left events fire. Taking a backup doesn't trigger it.
+- Tests for both, including scripted restart, long update, boot-then-
+  autostart, ignored-command and cap scenarios.
+
 ## 1.6.0 (2026-11-06)
 
 ### Added

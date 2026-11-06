@@ -381,8 +381,15 @@ class AmpApiClient:
             raise AmpApiClientError(msg)
         return result
 
-    async def async_get_data(self) -> AmpCoordinatorData:
+    async def async_get_data(self, *, full: bool = True) -> AmpCoordinatorData:
         """Get data from the API for every instance, plus panel-level info.
+
+        With full=False only the single ADS get_instances() call is made
+        (state, running, player count and metrics for every instance); the
+        per-instance player list, uptime and backup calls and the panel
+        version/update lookups are skipped. The coordinator uses this for
+        its fast polling burst after an action and carries the skipped
+        fields forward from the previous full refresh.
 
         A stopped or unreachable instance must never fail the whole refresh:
         stopped instances are populated from the get_instances() payload only,
@@ -404,9 +411,15 @@ class AmpApiClient:
             raise AmpApiClientCommunicationError(msg) from exception
 
         instances = {
-            instance.instance_id: await self._async_get_instance_data(key, instance)
+            instance.instance_id: await self._async_get_instance_data(
+                key, instance, live=full
+            )
             for key, instance in enumerate(all_instances)
         }
+        if not full:
+            return AmpCoordinatorData(
+                instances=instances, panel_version=None, panel_update=None
+            )
         return AmpCoordinatorData(
             instances=instances,
             panel_version=await self._async_get_panel_version(all_instances),
@@ -467,7 +480,7 @@ class AmpApiClient:
         )
 
     async def _async_get_instance_data(
-        self, key: int, instance: Instance
+        self, key: int, instance: Instance, *, live: bool = True
     ) -> AmpExtendedInstance:
         """Build the data for a single instance.
 
@@ -515,7 +528,7 @@ class AmpApiClient:
             module=instance.module,
         )
 
-        if not instance.running:
+        if not instance.running or not live:
             return data
 
         live_instance = AMPInstance(instance)

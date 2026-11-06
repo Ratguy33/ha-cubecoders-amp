@@ -37,5 +37,18 @@
       "already_configured": "Device is already configured",
       "reconfigure_successful": "Reconfiguration was successful"
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Polling",
+        "data": {
+          "scan_interval": "Polling interval"
+        },
+        "data_description": {
+          "scan_interval": "How often to check AMP for instance status, players and metrics (10-600 seconds). Shorter intervals make more AMP API calls per running instance. After a start, stop, restart or update, the integration also checks every few seconds for a short while."
+        }
+      }
+    }
   }
 }
