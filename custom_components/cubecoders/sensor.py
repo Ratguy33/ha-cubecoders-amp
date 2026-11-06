@@ -14,6 +14,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .api import AmpBaseInstance
+from .const import STATUS_OPTIONS, instance_status
 from .entity import AmpInstanceEntity, build_device_info
 from .entry import AMPConfigEntry
 
@@ -31,6 +32,7 @@ async def async_setup_entry(
             continue
         device = build_device_info(instance)
         sensor_entities = [
+            AmpStatusSensor(entry, instance, device),
             AmpSensor(
                 entry,
                 instance,
@@ -166,3 +168,49 @@ class AmpSensor(AmpInstanceEntity, SensorEntity):
         """Return the native value of the sensor."""
         instance = self.instance_data
         return getattr(instance, self.key) if instance is not None else None
+
+
+STATUS_ICONS = {
+    "offline": "mdi:server-off",
+    "idle": "mdi:server",
+    "running": "mdi:gamepad-variant",
+    "failed": "mdi:alert-circle",
+    "sleeping": "mdi:sleep",
+}
+
+
+class AmpStatusSensor(AmpInstanceEntity, SensorEntity):
+    """Simplified status: offline, idle, running, or what it is doing now.
+
+    offline = instance off; idle = instance on, application stopped;
+    running = application ready. In-between AMP states are grouped into
+    starting / stopping / restarting / updating / installing.
+    """
+
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = STATUS_OPTIONS
+    _attr_translation_key = "status"
+
+    def __init__(
+        self,
+        entry: AMPConfigEntry,
+        instance: AmpBaseInstance,
+        device: DeviceInfo,
+    ) -> None:
+        """Initialize the status sensor."""
+        super().__init__(entry.runtime_data.coordinator, instance, device)
+        self._attr_unique_id = f"{instance.instance_id}_status"
+        self._attr_name = f"{instance.instance_name} Status"
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the simplified status."""
+        data = self.instance_data
+        if data is None:
+            return None
+        return instance_status(running=data.running, app_state=data.app_state)
+
+    @property
+    def icon(self) -> str:
+        """Icon that follows the status."""
+        return STATUS_ICONS.get(self.native_value or "", "mdi:progress-clock")

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Status sensor** per instance with a simple, translated state:
+  **Offline** (instance off), **Idle** (instance on, application stopped)
+  and **Running** (application ready), plus Starting, Stopping,
+  Restarting, Updating, Installing, Sleeping and Failed while AMP is in
+  those states. It is an enum sensor, so automations can trigger on exact
+  values, and its icon follows the status. During the fast polling after
+  an action it updates every second like the other state entities.
+
 ## 1.7.2 (2026-11-06)
 ### Fixed
 
