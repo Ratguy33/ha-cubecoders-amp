@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Status didn't follow actions live on real panels.** 1.7.0's fast polls
+  read application state from the ADS instance list, which on a real panel
+  can lag a state change by tens of seconds, so the dashboard flashed
+  "starting" and then fell back to "stopped" until the next regular poll.
+  While following an action, the integration now reads the acted-on
+  instance's state from the instance itself (one Core/GetStatus call per
+  poll), and regular full polls use the instance's own state from
+  GetUpdates as well. If the instance can't answer yet (still booting), the
+  ADS-reported state is used.
+
 ## 1.7.0 (2026-11-06)
 
 ### Added
