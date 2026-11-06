@@ -6,6 +6,7 @@ from datetime import datetime
 import pyotp
 import pytest
 from ampapi import Bridge, Core
+from ampapi import base as ampapi_base
 from ampapi.dataclass import APIParams, LoginResults
 
 from custom_components.cubecoders import twofactor
@@ -168,3 +169,26 @@ async def test_no_secret_uses_library_login(amp, monkeypatch) -> None:
     monkeypatch.setattr(twofactor, "_ORIGINAL_CONNECT", original)
     await twofactor._connect(Core())  # noqa: SLF001
     assert called == [True]
+
+
+async def test_offline_instance_fails_fast_without_2fa_retries(amp, monkeypatch) -> None:
+    """Logging in to a stopped instance raises at once: no retries, no 2FA wait."""
+    amp()
+    calls = []
+
+    async def offline_call_api(self, api, parameters=None, **_kw):
+        calls.append(api)
+        raise ConnectionError(ampapi_base.Base._instance_offline, "http://amp")  # noqa: SLF001
+
+    waits = []
+
+    async def no_sleep(seconds: float) -> None:
+        waits.append(seconds)
+
+    monkeypatch.setattr("ampapi.base.Base._call_api", offline_call_api)
+    monkeypatch.setattr(twofactor.asyncio, "sleep", no_sleep)
+
+    with pytest.raises(ConnectionError):
+        await Core().call_end_point("Core/GetStatus")
+    assert calls == ["Core/Login"]
+    assert waits == []

@@ -92,6 +92,13 @@ async def _fresh_code(secret: str) -> str:
     return code
 
 
+def _is_instance_offline(exception: BaseException) -> bool:
+    """ampapi's "Instance Unavailable" error (see api.is_instance_offline)."""
+    return bool(exception.args) and (
+        exception.args[0] == amp_base.Base._instance_offline
+    )
+
+
 def _session_valid(self: amp_base.Base) -> bool:
     session = self._bridge._sessions.get(self.instance_id)
     if not isinstance(session, APISession) or session.id in ("", "0"):
@@ -107,6 +114,13 @@ async def _try_login(self: amp_base.Base, parameters: dict[str, Any]) -> LoginRe
             format_data=True,
             format_=LoginResults,
         )
+    except ConnectionError as exception:
+        if _is_instance_offline(exception):
+            # The instance is down: no credentials will help, and retrying
+            # would wait for a fresh 2FA code. Let the caller see it.
+            raise
+        _LOGGER.debug("AMP login attempt raised", exc_info=True)
+        return None
     except Exception:  # a failed attempt falls through to the next one
         _LOGGER.debug("AMP login attempt raised", exc_info=True)
         return None
